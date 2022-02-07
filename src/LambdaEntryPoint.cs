@@ -1,0 +1,113 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
+using Serilog;
+using Serilog.Events;
+namespace src
+{
+
+/// <summary>
+    /// This class extends from APIGatewayProxyFunction which contains the method FunctionHandlerAsync which is the
+    /// actual Lambda function entry point. The Lambda handler field should be set to
+    ///
+    /// NFTMAKER.Lambda::NFTMAKER.Lambda.LambdaEntryPoint::FunctionHandlerAsync
+    /// </summary>
+    public class LambdaEntryPoint :
+
+        // The base class must be set to match the AWS service invoking the Lambda function. If not Amazon.Lambda.AspNetCoreServer
+        // will fail to convert the incoming request correctly into a valid ASP.NET Core request.
+        //
+        // API Gateway REST API                         -> Amazon.Lambda.AspNetCoreServer.APIGatewayProxyFunction
+        // API Gateway HTTP API payload version 1.0     -> Amazon.Lambda.AspNetCoreServer.APIGatewayProxyFunction
+        // API Gateway HTTP API payload version 2.0     -> Amazon.Lambda.AspNetCoreServer.APIGatewayHttpApiV2ProxyFunction
+        // Application Load Balancer                    -> Amazon.Lambda.AspNetCoreServer.ApplicationLoadBalancerFunction
+        //
+        // Note: When using the AWS::Serverless::Function resource with an event type of "HttpApi" then payload version 2.0
+        // will be the default and you must make Amazon.Lambda.AspNetCoreServer.APIGatewayHttpApiV2ProxyFunction the base class.
+
+        Amazon.Lambda.AspNetCoreServer.APIGatewayProxyFunction
+    {
+
+        public static readonly string Namespace = typeof(LambdaEntryPoint).Namespace;
+        public static readonly string AppName = Namespace.Substring(Namespace.LastIndexOf('.', Namespace.LastIndexOf('.') - 1) + 1);
+
+        /// <summary>
+        /// The builder has configuration, logging and Amazon API Gateway already configured. The startup class
+        /// needs to be configured in this method using the UseStartup<>() method.
+        /// </summary>
+        /// <param name="builder"></param>
+        protected override void Init(IWebHostBuilder builder)
+        {
+            var configuration = GetConfiguration();
+
+            Log.Logger = CreateSerilogLogger(configuration);
+
+
+
+
+            try
+            {
+                Log.Information("Configuring web host ({ApplicationContext})...", AppName);
+
+                builder
+                    .UseStartup<Startup>()
+                    .UseConfiguration(configuration);
+
+
+
+                Log.Information("Starting web host ({ApplicationContext})...", AppName);
+            }
+            catch (Exception ex)
+            {
+                Log.Fatal(ex, "Program terminated unexpectedly ({ApplicationContext})!", AppName);
+            }
+            finally
+            {
+                Log.CloseAndFlush();
+            }
+        }
+
+        /// <summary>
+        /// Use this override to customize the services registered with the IHostBuilder.
+        ///
+        /// It is recommended not to call ConfigureWebHostDefaults to configure the IWebHostBuilder inside this method.
+        /// Instead customize the IWebHostBuilder in the Init(IWebHostBuilder) overload.
+        /// </summary>
+        /// <param name="builder"></param>
+        protected override void Init(IHostBuilder builder)
+        {
+            builder.
+               UseContentRoot(Directory.GetCurrentDirectory())
+               .UseSerilog(CreateSerilogLogger(GetConfiguration()));
+        }
+
+
+        private static ILogger CreateSerilogLogger(IConfiguration configuration)
+        {
+
+            return new LoggerConfiguration()
+                .MinimumLevel.Information()
+                .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+                .MinimumLevel.Override("System", LogEventLevel.Warning)
+                .Enrich.WithProperty("ApplicationContext", AppName)
+                .Enrich.FromLogContext()
+                .WriteTo.Console(outputTemplate: "[{Timestamp:yyy-MM-dd HH:mm:ss.fff zzz} {Level}] {Message} ({SourceContext:l}){NewLine}{Exception}")
+                .ReadFrom.Configuration(configuration)
+                .CreateLogger();
+        }
+
+        private static IConfiguration GetConfiguration()
+        {
+            var builder = new ConfigurationBuilder()
+                .SetBasePath(Directory.GetCurrentDirectory())
+                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+                .AddEnvironmentVariables(prefix: "ASPNETCORE_");
+
+            return builder.Build();
+        }
+    }
+}

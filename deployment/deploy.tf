@@ -12,7 +12,7 @@ resource "aws_s3_bucket" "lambda_bucket" {
 data "archive_file" "weather-app" {
   type = "zip"
 
-  source_dir  = "${path.module}/dist/serverless"
+  source_dir  = "../${path.module}/dist/serverless"
   output_path = "${path.module}/serverless.zip"
 }
 
